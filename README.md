@@ -15,7 +15,11 @@ Before running aoc-2021 you need:
 
 ## Using the project
 
-W.I.P.
+Each day is its own subcommand like `cargo run -- day01` with its own arguments viewable with `cargo run -- day01 --help`.
+
+To view all subcommands run `cargo run -- --help`.
+
+For the full speed use `--release` after `cargo run` like `cargo run --release -- day01`.
 
 ---
 
