@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::Error as IoError;
 use std::io::Read;
 
+use clap::Arg;
+
 use thiserror::Error;
 
 pub mod day01;
@@ -25,4 +27,14 @@ pub enum ReadFileContentsError {
     OpeningFile(#[source] IoError),
     #[error("Failed reading file ({0})")]
     ReadingFile(#[source] IoError),
+}
+
+fn clap_arg_puzzle_part_time_two() -> Arg<'static, 'static> {
+    Arg::with_name("puzzle_part")
+        .short("p")
+        .long("part")
+        .value_name("PUZZLE_PART")
+        .help("selects the part of the puzzle solution")
+        .possible_values(&["one", "two", "1", "2"])
+        .default_value("two")
 }

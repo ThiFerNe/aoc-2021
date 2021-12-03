@@ -4,7 +4,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day01";
 
@@ -19,15 +19,7 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("day01-input"),
         )
-        .arg(
-            Arg::with_name("puzzle_part")
-                .short("p")
-                .long("part")
-                .value_name("PUZZLE_PART")
-                .help("selects the part of the puzzle solution")
-                .possible_values(&["one", "two", "1", "2"])
-                .default_value("two"),
-        )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day01Error> {
