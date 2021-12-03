@@ -1,51 +1,14 @@
 use std::num::ParseIntError;
 
-use clap::{App, Arg, ArgMatches, SubCommand};
-
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
-
-pub const SUBCOMMAND_NAME: &str = "day02";
-
-pub fn subcommand() -> App<'static, 'static> {
-    SubCommand::with_name(SUBCOMMAND_NAME)
-        .about("My solution for Day 2: Dive!")
-        .arg(
-            Arg::with_name("input_file")
-                .short("f")
-                .long("file")
-                .value_name("FILE")
-                .help("sets the input file")
-                .default_value("day02-input"),
-        )
-}
-
-pub fn handle(matches: &ArgMatches) -> Result<(), Day02Error> {
-    let input_file = matches.value_of("input_file");
-    let file_contents = read_file_contents(input_file)
-        .map_err(|error| Day02Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let mut submarine = Submarine::default();
-    submarine.drive(&file_contents)?;
-    println!("Drove submarine to {:?}.", submarine.position);
-    Ok(())
-}
-
-#[derive(Debug, Error)]
-pub enum Day02Error {
-    #[error("Could not read file contents of \"{0:?}\" ({1})")]
-    ReadFileContents(Option<String>, #[source] ReadFileContentsError),
-    #[error("Could not drive submarine ({0})")]
-    SubmarineDrive(#[from] SubmarineDriveError),
-}
-
 #[derive(Default)]
-struct Submarine {
-    position: Position,
+pub struct Submarine {
+    pub position: Position,
 }
 
 impl Submarine {
-    fn drive(&mut self, course: &str) -> Result<(), SubmarineDriveError> {
+    pub fn drive(&mut self, course: &str) -> Result<(), SubmarineDriveError> {
         course
             .split(|c| c == '\r' || c == '\n')
             .filter(|line| !line.is_empty())
@@ -108,7 +71,7 @@ pub enum SubmarineDriveError {
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
-struct Position {
+pub struct Position {
     horizontal: u128,
     depth: u128,
 }
