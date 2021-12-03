@@ -6,6 +6,7 @@ use thiserror::Error;
 
 pub mod day01;
 pub mod day02;
+pub mod day03;
 
 fn read_file_contents(file_path: Option<&str>) -> Result<String, ReadFileContentsError> {
     let mut content = String::new();
