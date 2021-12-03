@@ -1,6 +1,6 @@
 [package]
 name = "aoc2021"
-version = "0.1.2"
+version = "0.2.1"
 authors = ["ThiFerNe <thimo.f.neumann@gmail.com>"]
 description = "My hand-crafted solutions to the Advent of Code"
 edition = "2021"
@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 clap = "2.33.3"
 thiserror = "1.0.30"
+
+[dev-dependencies]
+rand = "0.8.4"

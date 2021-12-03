@@ -4,7 +4,7 @@ use thiserror::Error;
 
 mod lib;
 
-use crate::lib::day01;
+use crate::lib::{day01, day02};
 
 fn main() {
     let matches = App::new("Advent of Code 2021")
@@ -12,6 +12,7 @@ fn main() {
         .author(crate_authors!())
         .about(crate_description!())
         .subcommand(day01::subcommand())
+        .subcommand(day02::subcommand())
         .get_matches();
     if let Err(error) = handle_matches(matches) {
         eprintln!("Error: {}", error);
@@ -19,14 +20,16 @@ fn main() {
 }
 
 fn handle_matches(matches: ArgMatches) -> Result<(), HandleMatchesError> {
-    match matches.subcommand() {
-        ("day01", optional_subcommand_matches) => match optional_subcommand_matches {
-            Some(subcommand_matches) => day01::handle(subcommand_matches).map_err(Into::into),
-            None => Err(HandleMatchesError::SubCommandArgumentsAreMissing),
+    let (subcommand_name, optional_subcommand_matches) = matches.subcommand();
+    match optional_subcommand_matches {
+        Some(subcommand_matches) => match subcommand_name {
+            day01::SUBCOMMAND_NAME => day01::handle(subcommand_matches).map_err(Into::into),
+            day02::SUBCOMMAND_NAME => day02::handle(subcommand_matches).map_err(Into::into),
+            subcommand_name => Err(HandleMatchesError::SubCommandDoesNotExist(
+                subcommand_name.to_string(),
+            )),
         },
-        (subcommand_name, _) => Err(HandleMatchesError::SubCommandDoesNotExist(
-            subcommand_name.to_string(),
-        )),
+        None => Err(HandleMatchesError::SubCommandArgumentsAreMissing),
     }
 }
 
@@ -38,4 +41,6 @@ enum HandleMatchesError {
     SubCommandArgumentsAreMissing,
     #[error(transparent)]
     Day01Error(#[from] day01::Day01Error),
+    #[error(transparent)]
+    Day02Error(#[from] day02::Day02Error),
 }

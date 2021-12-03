@@ -6,9 +6,11 @@ use thiserror::Error;
 
 use super::{read_file_contents, ReadFileContentsError};
 
+pub const SUBCOMMAND_NAME: &str = "day01";
+
 pub fn subcommand() -> App<'static, 'static> {
-    SubCommand::with_name("day01")
-        .about("My solution for day 1")
+    SubCommand::with_name(SUBCOMMAND_NAME)
+        .about("My solution for Day 1: Sonar Sweep")
         .arg(
             Arg::with_name("input_file")
                 .short("f")
