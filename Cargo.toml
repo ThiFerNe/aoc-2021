@@ -1,8 +1,10 @@
 [package]
 name = "aoc2021"
-version = "0.1.0"
+version = "0.0.1"
+authors = ["ThiFerNe <thimo.f.neumann@gmail.com>"]
+description = "My hand-crafted solutions to the Advent of Code"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+clap = "2.33.3"
+thiserror = "1.0.30"
