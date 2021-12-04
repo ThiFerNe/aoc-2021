@@ -5,7 +5,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day04";
 
@@ -20,14 +20,19 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("day04-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day04Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day04Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let scores = calculate_winning_bingo_board_scores(&file_contents)?;
-    println!("The winning bingo board has {:?}.", scores);
+    let board_selection = match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => BoardSelection::Loosing,
+        _ => BoardSelection::Winning,
+    };
+    let scores = calculate_winning_bingo_board_scores(&file_contents, board_selection)?;
+    println!("The {} bingo board has {:?}.", board_selection, scores);
     Ok(())
 }
 
@@ -41,6 +46,7 @@ pub enum Day04Error {
 
 pub fn calculate_winning_bingo_board_scores(
     bingo_play_data: &str,
+    board_selection: BoardSelection,
 ) -> Result<Scores, CalculateWinningBingoBoardScoresError> {
     let (drawn_number_strings, bingo_board_strings): (Option<&str>, Vec<Vec<&str>>) =
         bingo_play_data
@@ -83,9 +89,16 @@ pub fn calculate_winning_bingo_board_scores(
         optional_last_drawn_number = Some(drawn_number);
         for bingo_board in &mut bingo_boards {
             bingo_board.mark(drawn_number);
-            if bingo_board.contains_bingo() {
+            if board_selection == BoardSelection::Winning && bingo_board.contains_bingo() {
                 optional_winning_board = Some(bingo_board.clone());
                 break;
+            }
+        }
+        if board_selection == BoardSelection::Loosing {
+            if bingo_boards.len() == 1 && bingo_boards[0].contains_bingo() {
+                optional_winning_board = Some(bingo_boards[0].clone());
+            } else {
+                bingo_boards.retain(|bingo_board| !bingo_board.contains_bingo());
             }
         }
         if optional_winning_board.is_some() {
@@ -224,6 +237,21 @@ pub enum BingoBoardFromStrError {
     LineCountNotFive(usize, Vec<[u8; 5]>),
 }
 
+#[derive(Eq, PartialEq, Copy, Clone)]
+pub enum BoardSelection {
+    Winning,
+    Loosing,
+}
+
+impl std::fmt::Display for BoardSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Winning => write!(f, "winning"),
+            Self::Loosing => write!(f, "loosing"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn calculate_winning_bingo_board_scores_should_return_188_24() {
+    fn calculate_winning_bingo_board_scores_with_winning_should_return_188_24() {
         // given
         let input = "7,4,9,5,11,17,23,2,0,14,21,24,10,16,13,6,15,25,12,22,18,20,8,19,3,26,1\
                             \r\n\r\n22 13 17 11  0\r\n 8  2 23  4 24\r\n21  9 14 16  7\
@@ -278,9 +306,26 @@ mod tests {
                             18  8 23 26 20\r\n22 11 13  6  5\r\n 2  0 12  3  7";
 
         // when
-        let scores = calculate_winning_bingo_board_scores(input);
+        let scores = calculate_winning_bingo_board_scores(input, BoardSelection::Winning);
 
         // then
         assert_eq!(scores, Ok(Scores::of(188, 24)));
+    }
+
+    #[test]
+    fn calculate_winning_bingo_board_scores_with_loosing_should_return_148_13() {
+        // given
+        let input = "7,4,9,5,11,17,23,2,0,14,21,24,10,16,13,6,15,25,12,22,18,20,8,19,3,26,1\
+                            \r\n\r\n22 13 17 11  0\r\n 8  2 23  4 24\r\n21  9 14 16  7\
+                            \r\n 6 10  3 18  5\r\n 1 12 20 15 19\r\n\r\n 3 15  0  2 22\
+                            \r\n 9 18 13 17  5\r\n19  8  7 25 23\r\n20 11 10 24  4\r\n\
+                            14 21 16 12  6\r\n\r\n14 21 17 24  4\r\n10 16 15  9 19\r\n\
+                            18  8 23 26 20\r\n22 11 13  6  5\r\n 2  0 12  3  7";
+
+        // when
+        let scores = calculate_winning_bingo_board_scores(input, BoardSelection::Loosing);
+
+        // then
+        assert_eq!(scores, Ok(Scores::of(148, 13)));
     }
 }

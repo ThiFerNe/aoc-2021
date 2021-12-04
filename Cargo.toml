@@ -1,6 +1,6 @@
 [package]
 name = "aoc2021"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["ThiFerNe <thimo.f.neumann@gmail.com>"]
 description = "My hand-crafted solutions to the Advent of Code"
 edition = "2021"
