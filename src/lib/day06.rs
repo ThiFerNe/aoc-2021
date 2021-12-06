@@ -1,9 +1,10 @@
-use clap::{App, Arg, ArgMatches, SubCommand};
 use std::num::ParseIntError;
+
+use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day06";
 
@@ -18,16 +19,23 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("day06-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day06Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day06Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let count_of_lanternfish = simulate_lanternfish(&file_contents, 80)?.len();
+    let simulation_days = match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => 256,
+        _ => 80,
+    };
+    let count_of_lanternfish = simulate_lanternfish(&file_contents, simulation_days)?
+        .iter()
+        .sum::<u128>();
     println!(
-        "After 80 days there are {} lanternfish.",
-        count_of_lanternfish
+        "After {} days there are {} lanternfish.",
+        simulation_days, count_of_lanternfish
     );
     Ok(())
 }
@@ -43,165 +51,51 @@ pub enum Day06Error {
 pub fn simulate_lanternfish(
     ages_of_nearby_lanternfish: &str,
     simulation_days: u128,
-) -> Result<Vec<Lanternfish>, SimulateLanternfishError> {
+) -> Result<[u128; 9], SimulateLanternfishError> {
     let mut lanternfish = ages_of_nearby_lanternfish
         .trim()
         .split(',')
         .map(|element| {
             element
                 .parse::<u8>()
-                .map(Into::into)
                 .map_err(|error| SimulateLanternfishError::Parse(element.to_string(), error))
+                .and_then(|days_left| {
+                    if days_left > 8 {
+                        Err(SimulateLanternfishError::TooYoung(days_left))
+                    } else {
+                        Ok(days_left)
+                    }
+                })
         })
-        .collect::<Result<Vec<Lanternfish>, SimulateLanternfishError>>()?;
+        .collect::<Result<Vec<u8>, SimulateLanternfishError>>()?
+        .into_iter()
+        .fold([0u128; 9], |mut lanternfish, next| {
+            lanternfish[next as usize] += 1;
+            lanternfish
+        });
     for _ in 1..=simulation_days {
-        lanternfish = lanternfish
-            .into_iter()
-            .flat_map(|mut lanternfish| {
-                if lanternfish.is_soon_to_die() {
-                    let offspring = lanternfish.produce_offspring();
-                    lanternfish.reincarnate();
-                    vec![lanternfish, offspring]
-                } else {
-                    lanternfish.grow_old();
-                    vec![lanternfish]
-                }
-            })
-            .collect();
+        let reincarnating_lanternfish = lanternfish[0];
+        for lanternfish_age in 1..=8 {
+            let aging_lanternfish = lanternfish[lanternfish_age];
+            lanternfish[lanternfish_age - 1] = aging_lanternfish;
+        }
+        lanternfish[6] += reincarnating_lanternfish;
+        lanternfish[8] = reincarnating_lanternfish;
     }
     Ok(lanternfish)
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct Lanternfish(u8);
-
-impl Lanternfish {
-    // allowing dead code so the test case is nicer and maybe its needed in the second part
-    #[allow(dead_code)]
-    fn new(days_left: u8) -> Self {
-        Self(days_left)
-    }
-
-    // allowing dead code so the test case is nicer and maybe its needed in the second part
-    #[allow(dead_code)]
-    fn days_left(&self) -> u8 {
-        self.0
-    }
-
-    fn is_soon_to_die(&self) -> bool {
-        self.0 == 0
-    }
-
-    fn produce_offspring(&self) -> Self {
-        Lanternfish(8)
-    }
-
-    fn reincarnate(&mut self) {
-        self.0 = 6;
-    }
-
-    fn grow_old(&mut self) {
-        self.0 = self.0.saturating_sub(1);
-    }
-}
-
-impl From<u8> for Lanternfish {
-    fn from(value: u8) -> Self {
-        Self(value)
-    }
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum SimulateLanternfishError {
     #[error("Could not parse lantern fish age \"{0}\" ({1})")]
     Parse(String, ParseIntError),
+    #[error("Lanternfish with {0} days left is too young")]
+    TooYoung(u8),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn lanternfish_new() {
-        // when
-        let lanternfish_a = Lanternfish::new(7);
-        let lanternfish_b = Lanternfish::new(8);
-
-        // then
-        assert_eq!(lanternfish_a, Lanternfish(7));
-        assert_eq!(lanternfish_b, Lanternfish(8));
-    }
-
-    #[test]
-    fn lanternfish_days_left() {
-        // given
-        let young_lanternfish = Lanternfish::new(8);
-        let middle_aged_lanternfish = Lanternfish::new(4);
-        let old_lanternfish = Lanternfish::new(0);
-
-        // when + then
-        assert_eq!(young_lanternfish.days_left(), 8);
-        assert_eq!(middle_aged_lanternfish.days_left(), 4);
-        assert_eq!(old_lanternfish.days_left(), 0);
-    }
-
-    #[test]
-    fn lanternfish_is_soon_to_die() {
-        // given
-        let young_lanternfish = Lanternfish::new(8);
-        let middle_aged_lanternfish = Lanternfish::new(4);
-        let old_lanternfish = Lanternfish::new(0);
-
-        // when + then
-        assert!(!young_lanternfish.is_soon_to_die());
-        assert!(!middle_aged_lanternfish.is_soon_to_die());
-        assert!(old_lanternfish.is_soon_to_die());
-    }
-
-    #[test]
-    fn lanternfish_produce_offspring() {
-        // given
-        let lanternfish = Lanternfish::new(0);
-
-        // when
-        let offspring = lanternfish.produce_offspring();
-
-        // then
-        assert_eq!(offspring, Lanternfish::new(8));
-    }
-
-    #[test]
-    fn lanternfish_reincarnate() {
-        // given
-        let mut lanternfish_a = Lanternfish::new(0);
-        let mut lanternfish_b = Lanternfish::new(1);
-        let mut lanternfish_c = Lanternfish::new(6);
-
-        // when
-        lanternfish_a.reincarnate();
-        lanternfish_b.reincarnate();
-        lanternfish_c.reincarnate();
-
-        // then
-        assert_eq!(lanternfish_a.days_left(), 6);
-        assert_eq!(lanternfish_b.days_left(), 6);
-        assert_eq!(lanternfish_c.days_left(), 6);
-    }
-
-    #[test]
-    fn grow_old() {
-        // given
-        let mut lanternfish_a = Lanternfish::new(1);
-        let mut lanternfish_b = Lanternfish::new(7);
-
-        // when
-        lanternfish_a.grow_old();
-        lanternfish_b.grow_old();
-
-        // then
-        assert_eq!(lanternfish_a.days_left(), 0);
-        assert_eq!(lanternfish_b.days_left(), 6);
-    }
 
     #[test]
     fn simulate_lanternfish_should_return_5_elements() {
@@ -213,7 +107,7 @@ mod tests {
 
         // then
         assert!(lanternfish.is_ok());
-        assert_eq!(lanternfish.unwrap().len(), 5);
+        assert_eq!(lanternfish.unwrap().iter().sum::<u128>(), 5);
     }
 
     #[test]
@@ -226,7 +120,7 @@ mod tests {
 
         // then
         assert!(lanternfish.is_ok());
-        assert_eq!(lanternfish.unwrap().len(), 6);
+        assert_eq!(lanternfish.unwrap().iter().sum::<u128>(), 6);
     }
 
     #[test]
@@ -239,6 +133,19 @@ mod tests {
 
         // then
         assert!(lanternfish.is_ok());
-        assert_eq!(lanternfish.unwrap().len(), 5934);
+        assert_eq!(lanternfish.unwrap().iter().sum::<u128>(), 5934);
+    }
+
+    #[test]
+    fn simulate_lanternfish_should_return_26984457539_elements() {
+        // given
+        let input = "3,4,3,1,2\r\n";
+
+        // when
+        let lanternfish = simulate_lanternfish(input, 256);
+
+        // then
+        assert!(lanternfish.is_ok());
+        assert_eq!(lanternfish.unwrap().iter().sum::<u128>(), 26984457539);
     }
 }
