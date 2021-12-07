@@ -26,8 +26,18 @@ pub fn handle(matches: &ArgMatches) -> Result<(), Day07Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day07Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let (position, usage) = determine_horizontal_position_with_least_fuel_usage(&file_contents)?;
-    println!("Horizontal position {} has with {} fuel usage the least usage", position, usage);
+    let needed_fuel_calculation = match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => NeededFuelCalculation::Exponential,
+        _ => NeededFuelCalculation::Linear,
+    };
+    let (position, usage) = determine_horizontal_position_with_least_fuel_usage(
+        &file_contents,
+        needed_fuel_calculation,
+    )?;
+    println!(
+        "Horizontal position {} has with {} fuel usage the least usage with {:?} fuel usage",
+        position, usage, needed_fuel_calculation
+    );
     Ok(())
 }
 
@@ -43,6 +53,7 @@ pub enum Day07Error {
 
 pub fn determine_horizontal_position_with_least_fuel_usage(
     horizontal_crab_positions: &str,
+    needed_fuel_calculation: NeededFuelCalculation,
 ) -> Result<(HorizontalPosition, FuelUsage), DetermineHorizontalPositionWithLeastFuelUsageError> {
     let horizontal_positions = parse_horizontal_crab_positions(horizontal_crab_positions)?;
     let (min_pos, max_pos) = find_minimum_and_maximum(&horizontal_positions).ok_or(
@@ -53,7 +64,9 @@ pub fn determine_horizontal_position_with_least_fuel_usage(
         .filter_map(|target_position| {
             horizontal_positions
                 .iter()
-                .map(|start_position| target_position.needed_fuel_to(start_position))
+                .map(|start_position| {
+                    target_position.needed_fuel_to(start_position, needed_fuel_calculation)
+                })
                 .reduce(FuelUsage::add)
                 .map(|fuel_usage| (target_position, fuel_usage))
         })
@@ -81,12 +94,22 @@ impl HorizontalPosition {
         self.0
     }
 
-    pub fn needed_fuel_to(&self, other: &Self) -> FuelUsage {
-        FuelUsage(
-            self.0
-                .checked_sub(other.0)
-                .unwrap_or_else(|| other.0 - self.0),
-        )
+    pub fn needed_fuel_to(
+        &self,
+        other: &Self,
+        needed_fuel_calculation: NeededFuelCalculation,
+    ) -> FuelUsage {
+        match needed_fuel_calculation {
+            NeededFuelCalculation::Linear => FuelUsage(
+                self.0
+                    .checked_sub(other.0)
+                    .unwrap_or_else(|| other.0 - self.0),
+            ),
+            NeededFuelCalculation::Exponential => {
+                let (min, max) = (self.0.min(other.0), self.0.max(other.0));
+                FuelUsage((min..=max).map(|val| val - min).sum())
+            }
+        }
     }
 }
 
@@ -100,6 +123,12 @@ impl std::fmt::Display for HorizontalPosition {
             write!(f, "{}", self.0)
         }
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum NeededFuelCalculation {
+    Linear,
+    Exponential,
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -206,16 +235,31 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_position_needed_fuel_to() {
+    fn horizontal_position_needed_fuel_to_linear() {
         // given
         let horizontal_position_a = HorizontalPosition::of(4);
         let horizontal_position_b = HorizontalPosition::of(10);
 
         // when
-        let fuel_usage = horizontal_position_a.needed_fuel_to(&horizontal_position_b);
+        let fuel_usage = horizontal_position_a
+            .needed_fuel_to(&horizontal_position_b, NeededFuelCalculation::Linear);
 
         // then
         assert_eq!(fuel_usage.0, 6);
+    }
+
+    #[test]
+    fn horizontal_position_needed_fuel_to_exponential() {
+        // given
+        let horizontal_position_a = HorizontalPosition::of(16);
+        let horizontal_position_b = HorizontalPosition::of(5);
+
+        // when
+        let fuel_usage = horizontal_position_a
+            .needed_fuel_to(&horizontal_position_b, NeededFuelCalculation::Exponential);
+
+        // then
+        assert_eq!(fuel_usage.0, 66);
     }
 
     #[test]
@@ -224,9 +268,27 @@ mod tests {
         let input = "16,1,2,0,4,2,7,1,2,14\r\n";
 
         // when
-        let result = determine_horizontal_position_with_least_fuel_usage(input);
+        let result = determine_horizontal_position_with_least_fuel_usage(
+            input,
+            NeededFuelCalculation::Linear,
+        );
 
         // then
         assert_eq!(result, Ok((HorizontalPosition::of(2), FuelUsage(37))))
+    }
+
+    #[test]
+    fn determine_horizontal_position_with_least_fuel_usage_should_return_5_168() {
+        // given
+        let input = "16,1,2,0,4,2,7,1,2,14\r\n";
+
+        // when
+        let result = determine_horizontal_position_with_least_fuel_usage(
+            input,
+            NeededFuelCalculation::Exponential,
+        );
+
+        // then
+        assert_eq!(result, Ok((HorizontalPosition::of(5), FuelUsage(168))))
     }
 }
