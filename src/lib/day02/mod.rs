@@ -18,7 +18,7 @@ pub fn subcommand() -> App<'static, 'static> {
                 .long("file")
                 .value_name("FILE")
                 .help("sets the input file")
-                .default_value("day02-input"),
+                .default_value("puzzle-inputs/day02-input"),
         )
         .arg(
             Arg::with_name("puzzle_part")
