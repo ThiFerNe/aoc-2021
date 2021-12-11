@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day11";
 
@@ -18,17 +18,31 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day11-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day11Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day11Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let total_flashes_after_100_steps = calculate_total_flashes_after_100_steps(&file_contents)?;
-    println!(
-        "There were {} total flashes after 100 steps.",
-        total_flashes_after_100_steps
-    );
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let first_step_during_which_all_flash =
+                calculate_first_step_during_which_all_flash(&file_contents)?;
+            println!(
+                "The first step during which all octopuses will all flash is step number {}.",
+                first_step_during_which_all_flash
+            );
+        }
+        _ => {
+            let total_flashes_after_100_steps =
+                calculate_total_flashes_after_100_steps(&file_contents)?;
+            println!(
+                "There were {} total flashes after 100 steps.",
+                total_flashes_after_100_steps
+            );
+        }
+    };
     Ok(())
 }
 
@@ -38,6 +52,8 @@ pub enum Day11Error {
     ReadFileContents(Option<String>, #[source] ReadFileContentsError),
     #[error("Could not calculate total flashes after 100 steps ({0})")]
     CalculateTotalFlashesAfter100Steps(#[from] CalculateTotalFlashesAfter100StepsError),
+    #[error("Could not calculate first step during which all flash ({0})")]
+    CalculateFirstStepDuringWhichAllFlash(#[from] CalculateFirstStepDuringWhichAllFlashError),
 }
 
 pub fn calculate_total_flashes_after_100_steps(
@@ -54,6 +70,27 @@ pub fn calculate_total_flashes_after_100_steps(
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum CalculateTotalFlashesAfter100StepsError {
+    #[error("Could not parse octopus grid ({0})")]
+    OctopusGridFromStr(#[from] OctopusGridFromStrError),
+}
+
+pub fn calculate_first_step_during_which_all_flash(
+    octopus_grid: &str,
+) -> Result<u128, CalculateFirstStepDuringWhichAllFlashError> {
+    let mut octopus_grid = OctopusGrid::from_str(octopus_grid)?;
+    let mut step = 0;
+    Ok(loop {
+        let (new_octopus_grid, flash_count) = simulate_step(octopus_grid);
+        step += 1;
+        octopus_grid = new_octopus_grid;
+        if flash_count == 100 {
+            break step;
+        }
+    })
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum CalculateFirstStepDuringWhichAllFlashError {
     #[error("Could not parse octopus grid ({0})")]
     OctopusGridFromStr(#[from] OctopusGridFromStrError),
 }
@@ -182,7 +219,8 @@ mod tests {
     #[test]
     fn calculate_total_flashes_after_100_steps_should_return_1656() {
         // given
-        let input = "5483143223\r\n2745854711\r\n5264556173\r\n6141336146\r\n6357385478\r\n4167524645\r\n2176841721\r\n6882881134\r\n4846848554\r\n5283751526";
+        let input = "5483143223\r\n2745854711\r\n5264556173\r\n6141336146\r\n6357385478\r\n\
+                            4167524645\r\n2176841721\r\n6882881134\r\n4846848554\r\n5283751526";
 
         // when
         let total_flashes_after_100_steps = calculate_total_flashes_after_100_steps(input);
@@ -231,5 +269,18 @@ mod tests {
         let expected_after_step_3 = OctopusGrid::from_str(expected_after_step_3).unwrap();
         assert_eq!(after_step_3, expected_after_step_3);
         assert_eq!(after_step_3_flash_count, 45);
+    }
+
+    #[test]
+    fn calculate_first_step_during_which_all_flash_should_return_195() {
+        // given
+        let input = "5483143223\r\n2745854711\r\n5264556173\r\n6141336146\r\n6357385478\r\n\
+                            4167524645\r\n2176841721\r\n6882881134\r\n4846848554\r\n5283751526";
+
+        // when
+        let first_step_during_which_all_flash = calculate_first_step_during_which_all_flash(input);
+
+        // then
+        assert_eq!(first_step_during_which_all_flash, Ok(195));
     }
 }
