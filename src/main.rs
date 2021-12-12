@@ -4,7 +4,9 @@ use thiserror::Error;
 
 mod lib;
 
-use crate::lib::{day01, day02, day03, day04, day05, day06, day07, day08, day09, day10, day11};
+use crate::lib::{
+    day01, day02, day03, day04, day05, day06, day07, day08, day09, day10, day11, day12,
+};
 
 fn main() {
     let matches = App::new("Advent of Code 2021")
@@ -22,6 +24,7 @@ fn main() {
         .subcommand(day09::subcommand())
         .subcommand(day10::subcommand())
         .subcommand(day11::subcommand())
+        .subcommand(day12::subcommand())
         .get_matches();
     if let Err(error) = handle_matches(matches) {
         eprintln!("Error: {}", error);
@@ -43,6 +46,7 @@ fn handle_matches(matches: ArgMatches) -> Result<(), HandleMatchesError> {
             day09::SUBCOMMAND_NAME => day09::handle(subcommand_matches).map_err(Into::into),
             day10::SUBCOMMAND_NAME => day10::handle(subcommand_matches).map_err(Into::into),
             day11::SUBCOMMAND_NAME => day11::handle(subcommand_matches).map_err(Into::into),
+            day12::SUBCOMMAND_NAME => day12::handle(subcommand_matches).map_err(Into::into),
             subcommand_name => Err(HandleMatchesError::SubCommandDoesNotExist(
                 subcommand_name.to_string(),
             )),
@@ -79,4 +83,6 @@ enum HandleMatchesError {
     Day10Error(#[from] day10::Day10Error),
     #[error(transparent)]
     Day11Error(#[from] day11::Day11Error),
+    #[error(transparent)]
+    Day12Error(#[from] day12::Day12Error),
 }

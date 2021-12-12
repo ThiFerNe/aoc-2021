@@ -17,6 +17,7 @@ pub mod day08;
 pub mod day09;
 pub mod day10;
 pub mod day11;
+pub mod day12;
 
 fn read_file_contents(file_path: Option<&str>) -> Result<String, ReadFileContentsError> {
     let mut content = String::new();
