@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day12";
 
@@ -17,19 +18,35 @@ pub fn subcommand() -> App<'static, 'static> {
                 .long("file")
                 .value_name("FILE")
                 .help("sets the input file")
-                .default_value("puzzle-inputs/day12-input"), // TODO: download
+                .default_value("puzzle-inputs/day12-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day12Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day12Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let paths_count = count_paths_in_specific_way(&file_contents)?;
-    println!(
-        "There are {} paths through this cave system that visit small caves at once.",
-        paths_count
-    );
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let paths_count = count_paths_in_specific_way(
+                &file_contents,
+                CaveVisitVariation::OneSmallOneTwiceRemainingOnce,
+            )?;
+            println!(
+                "There are {} paths through this cave system that visit small caves at once, but one small one twice.",
+                paths_count
+            );
+        }
+        _ => {
+            let paths_count =
+                count_paths_in_specific_way(&file_contents, CaveVisitVariation::SmallOnesOnce)?;
+            println!(
+                "There are {} paths through this cave system that visit small caves at once.",
+                paths_count
+            );
+        }
+    };
     Ok(())
 }
 
@@ -41,8 +58,14 @@ pub enum Day12Error {
     CountPathsInSpecificWay(#[from] CountPathsInSpecificWayError),
 }
 
-pub fn count_paths_in_specific_way(rough_map: &str) -> Result<u128, CountPathsInSpecificWayError> {
-    Ok(find_paths_in_specific_way(&RoughMap::from_str(rough_map)?)?.len() as u128)
+pub fn count_paths_in_specific_way(
+    rough_map: &str,
+    cave_visit_variation: CaveVisitVariation,
+) -> Result<u128, CountPathsInSpecificWayError> {
+    Ok(
+        find_paths_in_specific_way(&RoughMap::from_str(rough_map)?, cave_visit_variation)?.len()
+            as u128,
+    )
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -55,6 +78,7 @@ pub enum CountPathsInSpecificWayError {
 
 fn find_paths_in_specific_way(
     rough_map: &RoughMap,
+    cave_visit_variation: CaveVisitVariation,
 ) -> Result<Vec<MapPath>, FindPathsInSpecificWayError> {
     if !rough_map.vertices.contains(&"start".to_string()) {
         return Err(FindPathsInSpecificWayError::MissingStartVertex);
@@ -78,17 +102,49 @@ fn find_paths_in_specific_way(
         never_target_vertex: &str,
         target_vertex: &str,
         initial_path: &[(String, String)],
+        visit_counters: &HashMap<String, u128>,
         rough_map: &RoughMap,
+        cave_visit_variation: CaveVisitVariation,
     ) -> Vec<Vec<(String, String)>> {
-        if initial_path.contains(current_edge)
-            || (current_edge.1.is_lowercase()
-                && initial_path
+        let current_target_is_small_cave = current_edge.1.is_lowercase();
+        let current_target_visit_counter =
+            visit_counters.get(&current_edge.1).copied().unwrap_or(0);
+        let current_target_will_be_second_visited = current_target_visit_counter == 1;
+
+        let invalid_visit = match cave_visit_variation {
+            CaveVisitVariation::SmallOnesOnce => {
+                current_target_is_small_cave && current_target_will_be_second_visited
+            }
+            CaveVisitVariation::OneSmallOneTwiceRemainingOnce => {
+                let any_small_cave_visited_min_twice = visit_counters
                     .iter()
-                    .any(|edge| current_edge.1 == edge.1 || current_edge.1 == never_target_vertex))
-        {
+                    .any(|(cave, counter)| cave.is_lowercase() && *counter >= 2);
+                let current_target_will_be_second_visited_min_twice =
+                    any_small_cave_visited_min_twice && current_target_visit_counter != 0;
+                let current_target_should_never_be_targeted = current_edge.1 == never_target_vertex;
+                let never_to_target_gets_targeted =
+                    current_target_should_never_be_targeted && current_target_visit_counter == 1;
+                current_target_is_small_cave
+                    && (current_target_will_be_second_visited_min_twice
+                        || never_to_target_gets_targeted)
+            }
+        };
+
+        if invalid_visit {
             Vec::new()
         } else {
             let mut new_path = initial_path.to_owned();
+            let mut new_visit_counters = visit_counters.clone();
+            if new_path.is_empty() {
+                new_visit_counters
+                    .entry(current_edge.0.clone())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+            }
+            new_visit_counters
+                .entry(current_edge.1.clone())
+                .and_modify(|c| *c += 1)
+                .or_insert(1);
             new_path.push(current_edge.clone());
             if current_edge.1 == target_vertex {
                 vec![new_path]
@@ -103,7 +159,9 @@ fn find_paths_in_specific_way(
                             never_target_vertex,
                             target_vertex,
                             &new_path.clone(),
+                            &new_visit_counters.clone(),
                             rough_map,
+                            cave_visit_variation,
                         )
                     })
                     .collect()
@@ -116,7 +174,15 @@ fn find_paths_in_specific_way(
         .iter()
         .filter(|(s, _)| s.as_str() == "start")
         .flat_map(|next_edge| {
-            calculate_edges_path(next_edge, "start", "end", &Vec::new(), rough_map)
+            calculate_edges_path(
+                next_edge,
+                "start",
+                "end",
+                &Vec::new(),
+                &HashMap::new(),
+                rough_map,
+                cave_visit_variation,
+            )
         })
         .map(MapPath::from)
         .collect())
@@ -189,6 +255,12 @@ pub enum RoughMapFromStrError {
     InvalidCountOfLinePair(usize, usize),
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum CaveVisitVariation {
+    SmallOnesOnce,
+    OneSmallOneTwiceRemainingOnce,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 struct MapPath(Vec<String>);
 
@@ -229,42 +301,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn count_paths_in_specific_way_should_return_10() {
+    fn count_paths_in_specific_way_small_ones_once_should_return_10() {
         // given
         let input = "start-A\r\nstart-b\r\nA-c\r\nA-b\r\nb-d\r\nA-end\r\nb-end";
 
         // when
-        let count_of_paths = count_paths_in_specific_way(input);
+        let count_of_paths = count_paths_in_specific_way(input, CaveVisitVariation::SmallOnesOnce);
 
         // then
         assert_eq!(count_of_paths, Ok(10));
     }
 
     #[test]
-    fn count_paths_in_specific_way_should_return_19() {
+    fn count_paths_in_specific_way_one_small_one_twice_should_return_36() {
+        // given
+        let input = "start-A\r\nstart-b\r\nA-c\r\nA-b\r\nb-d\r\nA-end\r\nb-end";
+
+        // when
+        let count_of_paths =
+            count_paths_in_specific_way(input, CaveVisitVariation::OneSmallOneTwiceRemainingOnce);
+
+        // then
+        assert_eq!(count_of_paths, Ok(36));
+    }
+
+    #[test]
+    fn count_paths_in_specific_way_small_ones_once_should_return_19() {
         // given
         let input = "dc-end\r\nHN-start\r\nstart-kj\r\ndc-start\r\ndc-HN\r\nLN-dc\r\n\
                             HN-end\r\nkj-sa\r\nkj-HN\r\nkj-dc";
 
         // when
-        let count_of_paths = count_paths_in_specific_way(input);
+        let count_of_paths = count_paths_in_specific_way(input, CaveVisitVariation::SmallOnesOnce);
 
         // then
         assert_eq!(count_of_paths, Ok(19));
     }
 
     #[test]
-    fn count_paths_in_specific_way_should_return_226() {
+    fn count_paths_in_specific_way_one_small_one_twice_should_return_103() {
+        // given
+        let input = "dc-end\r\nHN-start\r\nstart-kj\r\ndc-start\r\ndc-HN\r\nLN-dc\r\n\
+                            HN-end\r\nkj-sa\r\nkj-HN\r\nkj-dc";
+
+        // when
+        let count_of_paths =
+            count_paths_in_specific_way(input, CaveVisitVariation::OneSmallOneTwiceRemainingOnce);
+
+        // then
+        assert_eq!(count_of_paths, Ok(103));
+    }
+
+    #[test]
+    fn count_paths_in_specific_way_small_ones_once_should_return_226() {
         // given
         let input = "fs-end\r\nhe-DX\r\nfs-he\r\nstart-DX\r\npj-DX\r\nend-zg\r\nzg-sl\r\n\
                             zg-pj\r\npj-he\r\nRW-he\r\nfs-DX\r\npj-RW\r\nzg-RW\r\nstart-pj\r\n\
                             he-WI\r\nzg-he\r\npj-fs\r\nstart-RW";
 
         // when
-        let count_of_paths = count_paths_in_specific_way(input);
+        let count_of_paths = count_paths_in_specific_way(input, CaveVisitVariation::SmallOnesOnce);
 
         // then
         assert_eq!(count_of_paths, Ok(226));
+    }
+
+    #[test]
+    fn count_paths_in_specific_way_one_small_one_twice_should_return_3509() {
+        // given
+        let input = "fs-end\r\nhe-DX\r\nfs-he\r\nstart-DX\r\npj-DX\r\nend-zg\r\nzg-sl\r\n\
+                            zg-pj\r\npj-he\r\nRW-he\r\nfs-DX\r\npj-RW\r\nzg-RW\r\nstart-pj\r\n\
+                            he-WI\r\nzg-he\r\npj-fs\r\nstart-RW";
+
+        // when
+        let count_of_paths =
+            count_paths_in_specific_way(input, CaveVisitVariation::OneSmallOneTwiceRemainingOnce);
+
+        // then
+        assert_eq!(count_of_paths, Ok(3509));
     }
 
     #[test]
@@ -308,13 +422,13 @@ mod tests {
     }
 
     #[test]
-    fn test_find_paths_in_specific_way() {
+    fn test_find_paths_in_specific_way_small_ones_once() {
         // given
         let input = "start-A\r\nstart-b\r\nA-c\r\nA-b\r\nb-d\r\nA-end\r\nb-end";
         let rough_map = RoughMap::from_str(input).unwrap();
 
         // when
-        let map_paths = find_paths_in_specific_way(&rough_map);
+        let map_paths = find_paths_in_specific_way(&rough_map, CaveVisitVariation::SmallOnesOnce);
 
         // then
         let map_paths = map_paths.unwrap();
