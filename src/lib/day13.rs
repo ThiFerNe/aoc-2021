@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::Display;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -6,7 +7,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day13";
 
@@ -21,18 +22,30 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day13-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day13Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day13Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let count_of_dots_visible_after_folding =
-        count_dots_visible_after_folding(&file_contents, FoldCount::First)?;
-    println!(
-        "There are {} dots visible after completing just the first fold instruction.",
-        count_of_dots_visible_after_folding
-    );
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let folded_transparent_paper = fully_fold_transparent_paper(&file_contents)?;
+            println!(
+                "The fully folded transparent paper looks like:\r\n\r\n{}",
+                folded_transparent_paper
+            );
+        }
+        _ => {
+            let count_of_dots_visible_after_folding =
+                count_dots_visible_after_folding_once(&file_contents)?;
+            println!(
+                "There are {} dots visible after completing just the first fold instruction.",
+                count_of_dots_visible_after_folding
+            );
+        }
+    };
     Ok(())
 }
 
@@ -42,22 +55,16 @@ pub enum Day13Error {
     ReadFileContents(Option<String>, #[source] ReadFileContentsError),
     #[error("Could not count dots visible after folding ({0})")]
     CountDotsVisibleAfterFolding(#[from] CountDotsVisibleAfterFoldingError),
+    #[error("Could not fully fold transparent paper ({0})")]
+    FullyFoldTransparentPaper(#[from] FullyFoldTransparentPaperError),
 }
 
-pub fn count_dots_visible_after_folding(
+pub fn count_dots_visible_after_folding_once(
     transparent_paper: &str,
-    fold_count: FoldCount,
 ) -> Result<u128, CountDotsVisibleAfterFoldingError> {
     let mut transparent_paper = TransparentPaper::from_str(transparent_paper)?;
-    match fold_count {
-        FoldCount::First => transparent_paper.fold(),
-    }
+    transparent_paper.fold();
     Ok(transparent_paper.marked_dot_positions.len() as u128)
-}
-
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub enum FoldCount {
-    First,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -66,8 +73,24 @@ pub enum CountDotsVisibleAfterFoldingError {
     TransparentPaperFromStr(#[from] TransparentPaperFromStrError),
 }
 
+pub fn fully_fold_transparent_paper(
+    transparent_paper: &str,
+) -> Result<TransparentPaper, FullyFoldTransparentPaperError> {
+    let mut transparent_paper = TransparentPaper::from_str(transparent_paper)?;
+    while !transparent_paper.instructions.is_empty() {
+        transparent_paper.fold();
+    }
+    Ok(transparent_paper)
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum FullyFoldTransparentPaperError {
+    #[error("Could not parse transparent paper ({0})")]
+    TransparentPaperFromStr(#[from] TransparentPaperFromStrError),
+}
+
 #[derive(Debug, Clone)]
-struct TransparentPaper {
+pub struct TransparentPaper {
     marked_dot_positions: Vec<Position>,
     size: Size,
     instructions: Vec<FoldInstruction>,
@@ -131,6 +154,22 @@ impl TransparentPaper {
                     height: size.height + 1,
                 },
             )
+    }
+}
+
+impl Display for TransparentPaper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for y in 0..self.size.height {
+            for x in 0..self.size.width {
+                if self.marked_dot_positions.contains(&Position { x, y }) {
+                    write!(f, "#")?;
+                } else {
+                    write!(f, ".")?;
+                }
+            }
+            writeln!(f)?;
+        }
+        writeln!(f)
     }
 }
 
@@ -272,14 +311,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn count_dots_visible_after_folding_should_return_17() {
+    fn count_dots_visible_after_folding_once_should_return_17() {
         // given
         let input = "6,10\r\n0,14\r\n9,10\r\n0,3\r\n10,4\r\n4,11\r\n6,0\r\n6,12\r\n4,1\r\n\
                             0,13\r\n10,12\r\n3,4\r\n3,0\r\n8,4\r\n1,10\r\n2,14\r\n8,10\r\n9,0\r\n\
                             \r\nfold along y=7\r\nfold along x=5";
 
         // when
-        let dot_count_after_fold = count_dots_visible_after_folding(input, FoldCount::First);
+        let dot_count_after_fold = count_dots_visible_after_folding_once(input);
 
         // then
         assert_eq!(dot_count_after_fold, Ok(17));
