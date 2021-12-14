@@ -6,6 +6,7 @@ mod lib;
 
 use crate::lib::{
     day01, day02, day03, day04, day05, day06, day07, day08, day09, day10, day11, day12, day13,
+    day14,
 };
 
 fn main() {
@@ -26,6 +27,7 @@ fn main() {
         .subcommand(day11::subcommand())
         .subcommand(day12::subcommand())
         .subcommand(day13::subcommand())
+        .subcommand(day14::subcommand())
         .get_matches();
     if let Err(error) = handle_matches(matches) {
         eprintln!("Error: {}", error);
@@ -49,6 +51,7 @@ fn handle_matches(matches: ArgMatches) -> Result<(), HandleMatchesError> {
             day11::SUBCOMMAND_NAME => day11::handle(subcommand_matches).map_err(Into::into),
             day12::SUBCOMMAND_NAME => day12::handle(subcommand_matches).map_err(Into::into),
             day13::SUBCOMMAND_NAME => day13::handle(subcommand_matches).map_err(Into::into),
+            day14::SUBCOMMAND_NAME => day14::handle(subcommand_matches).map_err(Into::into),
             subcommand_name => Err(HandleMatchesError::SubCommandDoesNotExist(
                 subcommand_name.to_string(),
             )),
@@ -89,4 +92,6 @@ enum HandleMatchesError {
     Day12Error(#[from] day12::Day12Error),
     #[error(transparent)]
     Day13Error(#[from] day13::Day13Error),
+    #[error(transparent)]
+    Day14Error(#[from] day14::Day14Error),
 }
