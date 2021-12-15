@@ -5,7 +5,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day15";
 
@@ -20,16 +20,22 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day15-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day15Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day15Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let lowest_total_risk_of_any_path = calculate_lowest_total_risk_of_any_path(&file_contents)?;
+    let multiply_map = match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => (5, 5),
+        _ => (1, 1),
+    };
+    let lowest_total_risk_of_any_path =
+        calculate_lowest_total_risk_of_any_path(&file_contents, multiply_map)?;
     println!(
-        "The lowest total risk of any path is {}.",
-        lowest_total_risk_of_any_path
+        "The lowest total risk of any path is {} with a map multiplied {:?}.",
+        lowest_total_risk_of_any_path, multiply_map
     );
     Ok(())
 }
@@ -44,14 +50,17 @@ pub enum Day15Error {
 
 pub fn calculate_lowest_total_risk_of_any_path(
     risk_level_map: &str,
+    multiply_map: (usize, usize),
 ) -> Result<u128, CalculateLowestTotalRiskOfAnyPathError> {
-    let risk_level_map = RiskLevelMap::from_str(risk_level_map)?;
+    let risk_level_map = RiskLevelMap::from_str(risk_level_map)?.multiply(multiply_map);
 
     let start: (usize, usize) = (0, 0);
     let end: (usize, usize) = (
         risk_level_map.map[0].len() - 1,
         risk_level_map.map.len() - 1,
     );
+
+    // Dijkstra takes around 3 minutes for the second part on my machine, but that's good enough for me
 
     let mut distance = risk_level_map
         .map
@@ -115,6 +124,46 @@ struct RiskLevelMap {
     map: Vec<Vec<u8>>,
 }
 
+impl RiskLevelMap {
+    fn multiply(self, multiply_map: (usize, usize)) -> Self {
+        if multiply_map.0 == 0 || multiply_map.1 == 0 {
+            Self { map: Vec::new() }
+        } else {
+            let mut output = self.map;
+            if multiply_map.0 != 1 {
+                output = output
+                    .into_iter()
+                    .map(|mut line| {
+                        let line_len = line.len();
+                        for _ in 0..(multiply_map.0 - 1) {
+                            let offset = line.len() - line_len;
+                            for index in offset..(offset + line_len) {
+                                line.push(if line[index] == 9 { 1 } else { line[index] + 1 });
+                            }
+                        }
+                        line
+                    })
+                    .collect::<Vec<Vec<u8>>>();
+            }
+            if multiply_map.1 != 1 {
+                let height = output.len();
+                for _ in 0..(multiply_map.1 - 1) {
+                    let offset = output.len() - height;
+                    for index in offset..(offset + height) {
+                        output.push(
+                            output[index]
+                                .iter()
+                                .map(|v| if *v == 9 { 1 } else { *v + 1 })
+                                .collect(),
+                        );
+                    }
+                }
+            }
+            Self { map: output }
+        }
+    }
+}
+
 impl FromStr for RiskLevelMap {
     type Err = RiskLevelMapFromStrError;
 
@@ -153,9 +202,22 @@ mod tests {
                             1319128137\r\n1359912421\r\n3125421639\r\n1293138521\r\n2311944581";
 
         // when
-        let lowest_total_risk = calculate_lowest_total_risk_of_any_path(input);
+        let lowest_total_risk = calculate_lowest_total_risk_of_any_path(input, (1, 1));
 
         // then
         assert_eq!(lowest_total_risk, Ok(40));
+    }
+
+    #[test]
+    fn calculate_lowest_total_risk_of_any_path_should_return_315() {
+        // given
+        let input = "1163751742\r\n1381373672\r\n2136511328\r\n3694931569\r\n7463417111\r\n\
+                            1319128137\r\n1359912421\r\n3125421639\r\n1293138521\r\n2311944581";
+
+        // when
+        let lowest_total_risk = calculate_lowest_total_risk_of_any_path(input, (5, 5));
+
+        // then
+        assert_eq!(lowest_total_risk, Ok(315));
     }
 }
