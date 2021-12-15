@@ -5,7 +5,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day14";
 
@@ -20,19 +20,19 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day14-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day14Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day14Error::ReadFileContents(input_file.map(str::to_string), error))?;
+    let step_count = match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => 40,
+        _ => 10,
+    };
     let processed_polymer_character_count =
-        process_polymer_pair_insertion_rules(&file_contents, 10)?
-            .chars()
-            .fold(HashMap::new(), |mut map, character| {
-                map.entry(character).and_modify(|v| *v += 1).or_insert(1);
-                map
-            });
+        process_polymer_pair_insertion_rules(&file_contents, step_count)?;
     let (most_common, least_common) = processed_polymer_character_count
         .into_iter()
         .fold(None, |output, next| match output {
@@ -52,7 +52,8 @@ pub fn handle(matches: &ArgMatches) -> Result<(), Day14Error> {
         })
         .unwrap();
     println!(
-        "The answer to the puzzle is {:?} - {:?} = {}",
+        "The answer to the puzzle with {} steps is {:?} - {:?} = {}",
+        step_count,
         most_common,
         least_common,
         most_common.1 - least_common.1
@@ -71,47 +72,68 @@ pub enum Day14Error {
 pub fn process_polymer_pair_insertion_rules(
     instructions: &str,
     step_count: u128,
-) -> Result<String, ProcessPolymerPairInsertionRulesError> {
-    fn process(
-        polymer_instructions: PolymerInstructions,
-    ) -> Result<String, ProcessPolymerPairInsertionRulesError> {
-        let mut found = Vec::new();
-        for index in 0..polymer_instructions.polymer_template.len() {
+) -> Result<HashMap<char, u128>, ProcessPolymerPairInsertionRulesError> {
+    let polymer_instructions = PolymerInstructions::from_str(instructions)?;
+
+    let (mut bucket_pair_counting_map, optional_last_character) =
+        polymer_instructions.polymer_template.chars().fold(
+            (HashMap::new(), None),
+            |(mut counting_hash_map, optional_last_character): (
+                HashMap<(char, char), u128>,
+                Option<char>,
+            ),
+             next_character| {
+                if let Some(last_character) = optional_last_character {
+                    counting_hash_map
+                        .entry((last_character, next_character))
+                        .and_modify(|c| *c += 1)
+                        .or_insert(1);
+                }
+                (counting_hash_map, Some(next_character))
+            },
+        );
+    if let Some(last_character) = optional_last_character {
+        bucket_pair_counting_map
+            .entry((last_character, '\0'))
+            .and_modify(|c| *c += 1)
+            .or_insert(1);
+    }
+
+    for _ in 0..step_count {
+        let mut output = HashMap::new();
+        for (pair, count) in bucket_pair_counting_map.clone().into_iter() {
+            let pair_search_str = format!("{}{}", pair.0, pair.1);
+            let mut last_first_pair_character = pair.0;
             for pair_insertion_rule in &polymer_instructions.pair_insertion_rules {
-                if pair_insertion_rule.search_str
-                    == polymer_instructions.polymer_template[index
-                        ..(index + pair_insertion_rule.search_str.len())
-                            .min(polymer_instructions.polymer_template.len())]
-                {
-                    found.push((index + 1, pair_insertion_rule.clone()));
+                if pair_insertion_rule.search_str == pair_search_str {
+                    let insert_character = pair_insertion_rule
+                        .insert_str
+                        .chars()
+                        .collect::<Vec<char>>()[0];
+                    output
+                        .entry((last_first_pair_character, insert_character))
+                        .and_modify(|c| *c += count)
+                        .or_insert(count);
+                    last_first_pair_character = insert_character;
                 }
             }
+            output
+                .entry((last_first_pair_character, pair.1))
+                .and_modify(|c| *c += count)
+                .or_insert(count);
         }
-        Ok(polymer_instructions
-            .polymer_template
-            .chars()
-            .enumerate()
-            .fold(String::new(), |mut output, (index, character)| {
-                let (current, remaining) = found
-                    .clone()
-                    .into_iter()
-                    .partition(|(found_index, _)| index == *found_index);
-                found = remaining;
-                current.into_iter().for_each(|(_, rule)| {
-                    output.push_str(&rule.insert_str);
-                });
-                output.push(character);
-                output
-            }))
+        bucket_pair_counting_map = output;
     }
-    let mut polymer_instructions = PolymerInstructions::from_str(instructions)?;
-    for _ in 0..step_count {
-        polymer_instructions = PolymerInstructions {
-            polymer_template: process(polymer_instructions.clone())?,
-            pair_insertion_rules: polymer_instructions.pair_insertion_rules,
-        };
+
+    let mut output = HashMap::new();
+    for ((character, _), counter) in bucket_pair_counting_map.into_iter() {
+        output
+            .entry(character)
+            .and_modify(|c| *c += counter)
+            .or_insert(counter);
     }
-    Ok(polymer_instructions.polymer_template)
+
+    Ok(output)
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -201,7 +223,6 @@ pub enum PairInsertionRuleFromStrError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn process_polymer_pair_insertion_rules_should_return_b_1749_c_298_h_161_n_865() {
@@ -214,19 +235,27 @@ mod tests {
         let processed_polymer = process_polymer_pair_insertion_rules(input, 10);
 
         // then
-        println!("{:?}", processed_polymer);
-        assert!(processed_polymer.is_ok());
         let processed_polymer = processed_polymer.unwrap();
-        let map = processed_polymer
-            .chars()
-            .fold(HashMap::new(), |mut map, character| {
-                map.entry(character).and_modify(|v| *v += 1).or_insert(1);
-                map
-            });
-        assert_eq!(map.get(&'B'), Some(&1749));
-        assert_eq!(map.get(&'C'), Some(&298));
-        assert_eq!(map.get(&'H'), Some(&161));
-        assert_eq!(map.get(&'N'), Some(&865));
+        assert_eq!(processed_polymer.get(&'B'), Some(&1749));
+        assert_eq!(processed_polymer.get(&'C'), Some(&298));
+        assert_eq!(processed_polymer.get(&'H'), Some(&161));
+        assert_eq!(processed_polymer.get(&'N'), Some(&865));
+    }
+
+    #[test]
+    fn process_polymer_pair_insertion_rules_should_return_b_2192039569602_h_3849876073() {
+        // given
+        let input = "NNCB\r\n\r\nCH -> B\r\nHH -> N\r\nCB -> H\r\nNH -> C\r\nHB -> C\r\n\
+                            HC -> B\r\nHN -> C\r\nNN -> C\r\nBH -> H\r\nNC -> B\r\nNB -> B\r\n\
+                            BN -> B\r\nBB -> N\r\nBC -> B\r\nCC -> N\r\nCN -> C";
+
+        // when
+        let processed_polymer = process_polymer_pair_insertion_rules(input, 40);
+
+        // then
+        let processed_polymer = processed_polymer.unwrap();
+        assert_eq!(processed_polymer.get(&'B'), Some(&2192039569602));
+        assert_eq!(processed_polymer.get(&'H'), Some(&3849876073));
     }
 
     #[test]
@@ -240,7 +269,11 @@ mod tests {
         let processed_polymer = process_polymer_pair_insertion_rules(input, 1);
 
         // then
-        assert_eq!(processed_polymer, Ok("NCNBCHB".to_string()));
+        let processed_polymer = processed_polymer.unwrap();
+        assert_eq!(processed_polymer.get(&'N'), Some(&2));
+        assert_eq!(processed_polymer.get(&'C'), Some(&2));
+        assert_eq!(processed_polymer.get(&'B'), Some(&2));
+        assert_eq!(processed_polymer.get(&'H'), Some(&1));
     }
 
     #[test]
@@ -254,7 +287,11 @@ mod tests {
         let processed_polymer = process_polymer_pair_insertion_rules(input, 2);
 
         // then
-        assert_eq!(processed_polymer, Ok("NBCCNBBBCBHCB".to_string()));
+        let processed_polymer = processed_polymer.unwrap();
+        assert_eq!(processed_polymer.get(&'N'), Some(&2));
+        assert_eq!(processed_polymer.get(&'C'), Some(&4));
+        assert_eq!(processed_polymer.get(&'B'), Some(&6));
+        assert_eq!(processed_polymer.get(&'H'), Some(&1));
     }
 
     #[test]
@@ -268,10 +305,11 @@ mod tests {
         let processed_polymer = process_polymer_pair_insertion_rules(input, 3);
 
         // then
-        assert_eq!(
-            processed_polymer,
-            Ok("NBBBCNCCNBBNBNBBCHBHHBCHB".to_string())
-        );
+        let processed_polymer = processed_polymer.unwrap();
+        assert_eq!(processed_polymer.get(&'N'), Some(&5));
+        assert_eq!(processed_polymer.get(&'C'), Some(&5));
+        assert_eq!(processed_polymer.get(&'B'), Some(&11));
+        assert_eq!(processed_polymer.get(&'H'), Some(&4));
     }
 
     #[test]
@@ -286,9 +324,10 @@ mod tests {
         let processed_polymer = process_polymer_pair_insertion_rules(input, 4);
 
         // then
-        assert_eq!(
-            processed_polymer,
-            Ok("NBBNBNBBCCNBCNCCNBBNBBNBBBNBBNBBCBHCBHHNHCBBCBHCB".to_string())
-        );
+        let processed_polymer = processed_polymer.unwrap();
+        assert_eq!(processed_polymer.get(&'N'), Some(&11));
+        assert_eq!(processed_polymer.get(&'C'), Some(&10));
+        assert_eq!(processed_polymer.get(&'B'), Some(&23));
+        assert_eq!(processed_polymer.get(&'H'), Some(&5));
     }
 }
