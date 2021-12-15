@@ -11,7 +11,7 @@ pub const SUBCOMMAND_NAME: &str = "day14";
 
 pub fn subcommand() -> App<'static, 'static> {
     SubCommand::with_name(SUBCOMMAND_NAME)
-        .about("My solution for Day 14: ?Extended Polymerization")
+        .about("My solution for Day 14: Extended Polymerization")
         .arg(
             Arg::with_name("input_file")
                 .short("f")
