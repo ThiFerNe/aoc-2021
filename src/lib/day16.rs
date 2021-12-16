@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day16";
 
@@ -18,17 +18,27 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day16-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day16Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day16Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let sum_of_packet_version_numbers = calculate_sum_of_packet_version_numbers(&file_contents)?;
-    println!(
-        "The sum of the packet version numbers is {}.",
-        sum_of_packet_version_numbers
-    );
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let value_of_packet = calculate_value_of_packet(&file_contents)?;
+            println!("The value of the packet is {}.", value_of_packet);
+        }
+        _ => {
+            let sum_of_packet_version_numbers =
+                calculate_sum_of_packet_version_numbers(&file_contents)?;
+            println!(
+                "The sum of the packet version numbers is {}.",
+                sum_of_packet_version_numbers
+            );
+        }
+    };
     Ok(())
 }
 
@@ -38,6 +48,8 @@ pub enum Day16Error {
     ReadFileContents(Option<String>, #[source] ReadFileContentsError),
     #[error("Could not calculate sum of packet version numbers")]
     CalculateSumOfPacketVersionNumbers(#[from] CalculateSumOfPacketVersionNumbersError),
+    #[error("Could not calculate value of packet")]
+    CalculateValueOfPacket(#[from] CalculateValueOfPacketError),
 }
 
 pub fn calculate_sum_of_packet_version_numbers(
@@ -48,6 +60,18 @@ pub fn calculate_sum_of_packet_version_numbers(
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum CalculateSumOfPacketVersionNumbersError {
+    #[error("Could not parse packet from str ({0})")]
+    PacketFromStr(#[from] PacketFromStrError),
+}
+
+pub fn calculate_value_of_packet(
+    bits_transmission: &str,
+) -> Result<u128, CalculateValueOfPacketError> {
+    Ok(Packet::from_str(bits_transmission)?.value())
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum CalculateValueOfPacketError {
     #[error("Could not parse packet from str ({0})")]
     PacketFromStr(#[from] PacketFromStrError),
 }
@@ -68,6 +92,10 @@ impl Packet {
                 }
             }
     }
+
+    fn value(&self) -> u128 {
+        self.type_.value()
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -76,10 +104,56 @@ enum PacketType {
         value: u128,
     },
     Operator {
-        id: u8,
+        type_: OperatorType,
         length: LengthType,
         packets: Vec<Packet>,
     },
+}
+
+impl PacketType {
+    fn value(&self) -> u128 {
+        match self {
+            PacketType::LiteralValue { value } => *value,
+            PacketType::Operator { type_, packets, .. } => match type_ {
+                OperatorType::Sum => packets.iter().map(|packet| packet.value()).sum(),
+                OperatorType::Product => packets.iter().map(|packet| packet.value()).product(),
+                OperatorType::Minimum => packets.iter().map(|packet| packet.value()).min().unwrap(),
+                OperatorType::Maximum => packets.iter().map(|packet| packet.value()).max().unwrap(),
+                OperatorType::GreaterThan => {
+                    if packets[0].value() > packets[1].value() {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                OperatorType::LessThan => {
+                    if packets[0].value() < packets[1].value() {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                OperatorType::EqualTo => {
+                    if packets[0].value() == packets[1].value() {
+                        1
+                    } else {
+                        0
+                    }
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum OperatorType {
+    Sum,
+    Product,
+    Minimum,
+    Maximum,
+    GreaterThan,
+    LessThan,
+    EqualTo,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -98,10 +172,10 @@ impl FromStr for Packet {
             let mut read_bits = 0;
 
             let pver = poll_bits(3)?.to_u128()? as u8;
-            let id = poll_bits(3)?.to_u128()? as u8;
+            let tid = poll_bits(3)?.to_u128()? as u8;
             read_bits += 6;
 
-            match id {
+            match tid {
                 4 => {
                     let mut value = Vec::new();
                     let mut is_last_block = false;
@@ -121,6 +195,16 @@ impl FromStr for Packet {
                     ))
                 }
                 _ => {
+                    let type_ = match tid {
+                        0 => OperatorType::Sum,
+                        1 => OperatorType::Product,
+                        2 => OperatorType::Minimum,
+                        3 => OperatorType::Maximum,
+                        5 => OperatorType::GreaterThan,
+                        6 => OperatorType::LessThan,
+                        7 => OperatorType::EqualTo,
+                        _ => panic!("did not expect type id of {} here, because it should has been handled before", tid),
+                    };
                     let length = match poll_bits(1)?[0] {
                         Bit::Zero => {
                             let length = poll_bits(15)?.to_u128()? as u128;
@@ -133,7 +217,6 @@ impl FromStr for Packet {
                             LengthType::NumberOfSubPackets(packet_count)
                         }
                     };
-
                     let packets = match length {
                         LengthType::TotalLengthOfAllSubPacketInBits(length) => {
                             let mut read_so_far = 0;
@@ -156,12 +239,11 @@ impl FromStr for Packet {
                             packets
                         }
                     };
-
                     Ok((
                         Packet {
                             version: pver,
                             type_: PacketType::Operator {
-                                id,
+                                type_,
                                 length,
                                 packets,
                             },
@@ -326,7 +408,7 @@ mod tests {
             Ok(Packet {
                 version: 1,
                 type_: PacketType::Operator {
-                    id: 6,
+                    type_: OperatorType::LessThan,
                     length: LengthType::TotalLengthOfAllSubPacketInBits(27),
                     packets: vec![
                         Packet {
@@ -357,7 +439,7 @@ mod tests {
             Ok(Packet {
                 version: 7,
                 type_: PacketType::Operator {
-                    id: 3,
+                    type_: OperatorType::Maximum,
                     length: LengthType::NumberOfSubPackets(3),
                     packets: vec![
                         Packet {
@@ -379,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn packet_from_str_test_version_sums() {
+    fn test_calculate_sum_of_packet_version_numbers() {
         // given
         let input_a = "8A004A801A8002F478";
         let input_b = "620080001611562C8802118E34";
@@ -397,5 +479,38 @@ mod tests {
         assert_eq!(version_sum_b, Ok(12));
         assert_eq!(version_sum_c, Ok(23));
         assert_eq!(version_sum_d, Ok(31));
+    }
+
+    #[test]
+    fn test_calculate_value_of_packet() {
+        // given
+        let input_a = "C200B40A82";
+        let input_b = "04005AC33890";
+        let input_c = "880086C3E88112";
+        let input_d = "CE00C43D881120";
+        let input_e = "D8005AC2A8F0";
+        let input_f = "F600BC2D8F";
+        let input_g = "9C005AC2F8F0";
+        let input_h = "9C0141080250320F1802104A08";
+
+        // when
+        let value_a = calculate_value_of_packet(input_a);
+        let value_b = calculate_value_of_packet(input_b);
+        let value_c = calculate_value_of_packet(input_c);
+        let value_d = calculate_value_of_packet(input_d);
+        let value_e = calculate_value_of_packet(input_e);
+        let value_f = calculate_value_of_packet(input_f);
+        let value_g = calculate_value_of_packet(input_g);
+        let value_h = calculate_value_of_packet(input_h);
+
+        // then
+        assert_eq!(value_a, Ok(3));
+        assert_eq!(value_b, Ok(54));
+        assert_eq!(value_c, Ok(7));
+        assert_eq!(value_d, Ok(9));
+        assert_eq!(value_e, Ok(1));
+        assert_eq!(value_f, Ok(0));
+        assert_eq!(value_g, Ok(0));
+        assert_eq!(value_h, Ok(1));
     }
 }
