@@ -1,5 +1,6 @@
-use clap::{App, Arg, ArgMatches, SubCommand};
 use std::str::FromStr;
+
+use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
