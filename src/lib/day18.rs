@@ -7,7 +7,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day18";
 
@@ -22,18 +22,31 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day18-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day18Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day18Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let magnitude_of_added_snailfish_numbers =
-        find_magnitude_of_added_snailfish_numbers(&file_contents)?;
-    println!(
-        "The magnitude of added snailfish numbers is {}.",
-        magnitude_of_added_snailfish_numbers
-    );
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let largest_magnitude_of_any_addition =
+                find_largest_magnitude_of_any_addition(&file_contents)?;
+            println!(
+                "The largest magnitude of any addition is {}.",
+                largest_magnitude_of_any_addition
+            );
+        }
+        _ => {
+            let magnitude_of_added_snailfish_numbers =
+                find_magnitude_of_added_snailfish_numbers(&file_contents)?;
+            println!(
+                "The magnitude of added snailfish numbers is {}.",
+                magnitude_of_added_snailfish_numbers
+            );
+        }
+    };
     Ok(())
 }
 
@@ -41,8 +54,37 @@ pub fn handle(matches: &ArgMatches) -> Result<(), Day18Error> {
 pub enum Day18Error {
     #[error("Could not read file contents of \"{0:?}\" ({1})")]
     ReadFileContents(Option<String>, #[source] ReadFileContentsError),
+    #[error("Could not find largest magnitude of any addition ({0})")]
+    FindLargestMagnitudeOfAnyAddition(#[from] FindLargestMagnitudeOfAnyAdditionError),
     #[error("Could not find magnitude of added snailfish numbers ({0})")]
     FindMagnitudeOfAddedSnailfishNumbers(#[from] FindMagnitudeOfAddedSnailfishNumbersError),
+}
+
+pub fn find_largest_magnitude_of_any_addition(
+    snailfish_numbers: &str,
+) -> Result<u128, FindLargestMagnitudeOfAnyAdditionError> {
+    let snailfish_numbers = snailfish_numbers
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(SnailfishNumber::from_str)
+        .collect::<Result<Vec<SnailfishNumber>, SnailfishNumberFromStrError>>()?;
+    (0..snailfish_numbers.len())
+        .flat_map(|a| {
+            (0..snailfish_numbers.len())
+                .filter_map(move |b| if a == b { None } else { Some((a, b)) })
+        })
+        .map(|(a, b)| snailfish_numbers[a].clone() + snailfish_numbers[b].clone())
+        .map(|snailfish_number| SnailfishNumber::magnitude(&snailfish_number))
+        .max()
+        .ok_or(FindLargestMagnitudeOfAnyAdditionError::MissingSnailfishNumberInInput)
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum FindLargestMagnitudeOfAnyAdditionError {
+    #[error("Could not parse snailfish number from string ({0})")]
+    SnailfishNumberFromStr(#[from] SnailfishNumberFromStrError),
+    #[error("There was no snailfish number in input")]
+    MissingSnailfishNumberInInput,
 }
 
 pub fn find_magnitude_of_added_snailfish_numbers(
@@ -420,6 +462,25 @@ pub enum InnerSnailfishNumberFromStrError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_find_largest_magnitude_of_any_addition() {
+        // given
+        let input = "[[[0,[5,8]],[[1,7],[9,6]]],[[4,[1,2]],[[1,4],2]]]\r\n\
+                            [[[5,[2,8]],4],[5,[[9,9],0]]]\r\n[6,[[[6,2],[5,6]],[[7,6],[4,7]]]]\r\n\
+                            [[[6,[0,7]],[0,9]],[4,[9,[9,0]]]]\r\n\
+                            [[[7,[6,4]],[3,[1,3]]],[[[5,5],1],9]]\r\n\
+                            [[6,[[7,3],[3,2]]],[[[3,8],[5,7]],4]]\r\n\
+                            [[[[5,4],[7,7]],8],[[8,3],8]]\r\n[[9,3],[[9,9],[6,[4,9]]]]\r\n\
+                            [[2,[[7,7],7]],[[5,8],[[9,3],[0,2]]]]\r\n\
+                            [[[[5,2],5],[8,[3,7]]],[[5,[7,5]],[4,4]]]\r\n";
+
+        // when
+        let largest_magnitude_of_any_addition = find_largest_magnitude_of_any_addition(input);
+
+        // then
+        assert_eq!(largest_magnitude_of_any_addition, Ok(3993));
+    }
 
     #[test]
     fn test_find_magnitude_of_added_snailfish_numbers() {
