@@ -29,8 +29,20 @@ pub fn handle(matches: &ArgMatches) -> Result<(), Day19Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day19Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let unique_detected_beacons = count_unique_detected_beacons(&file_contents)?;
-    println!("There are {} beacons.", unique_detected_beacons);
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let largest_manhattan_distance_between_any_two_scanners =
+                find_largest_manhattan_distance_between_any_two_scanners(&file_contents)?;
+            println!(
+                "The largest Manhattan distance between any two scanners is {}.",
+                largest_manhattan_distance_between_any_two_scanners
+            );
+        }
+        _ => {
+            let unique_detected_beacons = count_unique_detected_beacons(&file_contents)?;
+            println!("There are {} beacons.", unique_detected_beacons);
+        }
+    };
     Ok(())
 }
 
@@ -40,12 +52,71 @@ pub enum Day19Error {
     ReadFileContents(Option<String>, #[source] ReadFileContentsError),
     #[error("Could not count unique detected beacons ({0})")]
     CountUniqueDetectedBeacons(#[from] CountUniqueDetectedBeaconsError),
+    #[error("Could not find largest Manhattan distance between any two scanners ({0})")]
+    FindLargestManhattanDistanceBetweenAnyTwoScanners(
+        #[from] FindLargestManhattanDistanceBetweenAnyTwoScannersError,
+    ),
 }
 
 pub fn count_unique_detected_beacons(
     relative_beacon_positions: &str,
 ) -> Result<u128, CountUniqueDetectedBeaconsError> {
-    let mut scanner_reports = parse_scanner_reports(relative_beacon_positions)?
+    let scanner_reports = parse_scanner_reports(relative_beacon_positions)?;
+    let positioned_scanners = position_scanners(scanner_reports)?;
+    let all_absolute_beacon_positions = positioned_scanners
+        .into_iter()
+        .flat_map(|scanner| scanner.scanned_beacons)
+        .fold(Vec::new(), |mut output, next| {
+            if !output.contains(&next) {
+                output.push(next);
+            }
+            output
+        });
+    Ok(all_absolute_beacon_positions.len() as u128)
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum CountUniqueDetectedBeaconsError {
+    #[error("Could not parse scanner reports from string ({0})")]
+    ParseScannerReports(#[from] ParseScannerReportsError),
+    #[error("Could not position scanners ({0})")]
+    PositionScanners(#[from] PositionScannersError),
+}
+
+pub fn find_largest_manhattan_distance_between_any_two_scanners(
+    relative_beacon_positions: &str,
+) -> Result<u128, FindLargestManhattanDistanceBetweenAnyTwoScannersError> {
+    let scanner_reports = parse_scanner_reports(relative_beacon_positions)?;
+    let positioned_scanners = position_scanners(scanner_reports)?;
+    positioned_scanners
+        .iter()
+        .flat_map(|scanner_a| {
+            positioned_scanners
+                .iter()
+                .map(move |scanner_b| (scanner_a, scanner_b))
+        })
+        .map(|(scanner_a, scanner_b)| {
+            let distance_vector = scanner_a.position.0 - scanner_b.position.0;
+            (distance_vector.x.abs() + distance_vector.y.abs() + distance_vector.z.abs()) as u128
+        })
+        .max()
+        .ok_or(FindLargestManhattanDistanceBetweenAnyTwoScannersError::MissingScanners)
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum FindLargestManhattanDistanceBetweenAnyTwoScannersError {
+    #[error("Could not parse scanner reports ({0})")]
+    ParseScannerReports(#[from] ParseScannerReportsError),
+    #[error("Could not position scanners ({0})")]
+    PositionScanners(#[from] PositionScannersError),
+    #[error("Missing scanners in input")]
+    MissingScanners,
+}
+
+fn position_scanners(
+    scanner_reports: Vec<ScannerReport>,
+) -> Result<Vec<Scanner>, PositionScannersError> {
+    let mut scanner_reports = scanner_reports
         .into_iter()
         .map(|scanner_report| (scanner_report.id, scanner_report))
         .collect::<HashMap<ScannerId, ScannerReport>>();
@@ -53,7 +124,7 @@ pub fn count_unique_detected_beacons(
     let mut positioned_scanners = vec![scanner_reports
         .remove(&ScannerId(0))
         .map(|scanner_report| scanner_report.into_scanner(&Rototranslation3D::identity()))
-        .ok_or(CountUniqueDetectedBeaconsError::MissingInitialScanner)?];
+        .ok_or(PositionScannersError::MissingInitialScanner)?];
 
     println!(
         "Going to position {} scanner reports...",
@@ -89,23 +160,11 @@ pub fn count_unique_detected_beacons(
             panic!("Could not fit any ScannerReport in the already positioned Scanners!");
         }
     }
-
-    let all_absolute_beacon_positions = positioned_scanners
-        .iter()
-        .flat_map(|scanner| &scanner.scanned_beacons)
-        .fold(Vec::new(), |mut output, next| {
-            if !output.contains(next) {
-                output.push(next.clone());
-            }
-            output
-        });
-    Ok(all_absolute_beacon_positions.len() as u128)
+    Ok(positioned_scanners)
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
-pub enum CountUniqueDetectedBeaconsError {
-    #[error("Could not parse scanner reports from string ({0})")]
-    ParseScannerReports(#[from] ParseScannerReportsError),
+pub enum PositionScannersError {
     #[error("Missing initial scanner (with number 0)")]
     MissingInitialScanner,
 }
@@ -559,6 +618,55 @@ mod tests {
 
         // then
         assert_eq!(unique_detected_beacons, Ok(79));
+    }
+
+    #[test]
+    fn test_find_largest_manhattan_distance_between_any_two_scanners() {
+        // given
+        let input = "--- scanner 0 ---\r\n404,-588,-901\r\n528,-643,409\r\n-838,591,734\r\n\
+                            390,-675,-793\r\n-537,-823,-458\r\n-485,-357,347\r\n-345,-311,381\r\n\
+                            -661,-816,-575\r\n-876,649,763\r\n-618,-824,-621\r\n553,345,-567\r\n\
+                            474,580,667\r\n-447,-329,318\r\n-584,868,-557\r\n544,-627,-890\r\n\
+                            564,392,-477\r\n455,729,728\r\n-892,524,684\r\n-689,845,-530\r\n\
+                            423,-701,434\r\n7,-33,-71\r\n630,319,-379\r\n443,580,662\r\n\
+                            -789,900,-551\r\n459,-707,401\r\n\r\n--- scanner 1 ---\r\n\
+                            686,422,578\r\n605,423,415\r\n515,917,-361\r\n-336,658,858\r\n\
+                            95,138,22\r\n-476,619,847\r\n-340,-569,-846\r\n567,-361,727\r\n\
+                            -460,603,-452\r\n669,-402,600\r\n729,430,532\r\n-500,-761,534\r\n\
+                            -322,571,750\r\n-466,-666,-811\r\n-429,-592,574\r\n-355,545,-477\r\n\
+                            703,-491,-529\r\n-328,-685,520\r\n413,935,-424\r\n-391,539,-444\r\n\
+                            586,-435,557\r\n-364,-763,-893\r\n807,-499,-711\r\n755,-354,-619\r\n\
+                            553,889,-390\r\n\r\n--- scanner 2 ---\r\n649,640,665\r\n\
+                            682,-795,504\r\n-784,533,-524\r\n-644,584,-595\r\n-588,-843,648\r\n\
+                            -30,6,44\r\n-674,560,763\r\n500,723,-460\r\n609,671,-379\r\n\
+                            -555,-800,653\r\n-675,-892,-343\r\n697,-426,-610\r\n578,704,681\r\n\
+                            493,664,-388\r\n-671,-858,530\r\n-667,343,800\r\n571,-461,-707\r\n\
+                            -138,-166,112\r\n-889,563,-600\r\n646,-828,498\r\n640,759,510\r\n\
+                            -630,509,768\r\n-681,-892,-333\r\n673,-379,-804\r\n-742,-814,-386\r\n\
+                            577,-820,562\r\n\r\n--- scanner 3 ---\r\n-589,542,597\r\n\
+                            605,-692,669\r\n-500,565,-823\r\n-660,373,557\r\n-458,-679,-417\r\n\
+                            -488,449,543\r\n-626,468,-788\r\n338,-750,-386\r\n528,-832,-391\r\n\
+                            562,-778,733\r\n-938,-730,414\r\n543,643,-506\r\n-524,371,-870\r\n\
+                            407,773,750\r\n-104,29,83\r\n378,-903,-323\r\n-778,-728,485\r\n\
+                            426,699,580\r\n-438,-605,-362\r\n-469,-447,-387\r\n509,732,623\r\n\
+                            647,635,-688\r\n-868,-804,481\r\n614,-800,639\r\n595,780,-596\r\n\r\n\
+                            --- scanner 4 ---\r\n727,592,562\r\n-293,-554,779\r\n441,611,-461\r\n\
+                            -714,465,-776\r\n-743,427,-804\r\n-660,-479,-426\r\n832,-632,460\r\n\
+                            927,-485,-438\r\n408,393,-506\r\n466,436,-512\r\n110,16,151\r\n\
+                            -258,-428,682\r\n-393,719,612\r\n-211,-452,876\r\n808,-476,-593\r\n\
+                            -575,615,604\r\n-485,667,467\r\n-680,325,-822\r\n-627,-443,-432\r\n\
+                            872,-547,-609\r\n833,512,582\r\n807,604,487\r\n839,-516,451\r\n\
+                            891,-625,532\r\n-652,-548,-490\r\n30,-46,-14\r\n";
+
+        // when
+        let largest_manhattan_distance_between_any_two_scanners =
+            find_largest_manhattan_distance_between_any_two_scanners(input);
+
+        // then
+        assert_eq!(
+            largest_manhattan_distance_between_any_two_scanners,
+            Ok(3621)
+        );
     }
 
     #[test]
