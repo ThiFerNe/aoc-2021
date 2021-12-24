@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
@@ -5,7 +6,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day21";
 
@@ -20,18 +21,31 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day21-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day21Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day21Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let loosing_score_times_die_rolls =
-        simulate_game_and_return_loosing_score_times_die_rolls(&file_contents)?;
-    println!(
-        "The loosing score multiplied by the die rolls is {}.",
-        loosing_score_times_die_rolls
-    );
+    match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => {
+            let winning_universe_count =
+                simulate_quantum_game_and_return_winning_universe_count(&file_contents)?;
+            println!(
+                "The winning player wins in {} universes.",
+                winning_universe_count
+            );
+        }
+        _ => {
+            let loosing_score_times_die_rolls =
+                simulate_game_and_return_loosing_score_times_die_rolls(&file_contents)?;
+            println!(
+                "The loosing score multiplied by the die rolls is {}.",
+                loosing_score_times_die_rolls
+            );
+        }
+    };
     Ok(())
 }
 
@@ -43,7 +57,100 @@ pub enum Day21Error {
     SimulateGameAndReturnLoosingScoreTimesDieRolls(
         #[from] SimulateGameAndReturnLoosingScoreTimesDieRollsError,
     ),
+    #[error("Could not simulate quantum game and return winning universe count ({0})")]
+    SimulateQuantumGameAndReturnWinningUniverseCount(
+        #[from] SimulateQuantumGameAndReturnWinningUniverseCountError,
+    ),
 }
+
+pub fn simulate_quantum_game_and_return_winning_universe_count(
+    starting_positions: &str,
+) -> Result<u128, SimulateQuantumGameAndReturnWinningUniverseCountError> {
+    enum UniverseSimulationOutput {
+        Universe(Universe),
+        Winner(u8),
+    }
+    let players = parse_players(starting_positions)?;
+    let count_of_players = players.len();
+    let mut winning_counters: HashMap<u8, u128> = HashMap::new();
+    let mut remaining_universes = HashMap::new();
+    remaining_universes.insert(Universe(players), 1);
+    let mut current_player = 0;
+    while !remaining_universes.is_empty() {
+        remaining_universes = remaining_universes
+            .into_iter()
+            .map(|(universe, universe_count)| {
+                (1..=27)
+                    .into_iter()
+                    .map(|value| {
+                        (
+                            universe.clone(),
+                            ((value / 9) % 3) + ((value / 3) % 3) + (value % 3) + 3,
+                        )
+                    })
+                    .map(|(mut universe, throw)| {
+                        universe.0[current_player].move_by(throw);
+                        if let Some(winning_player) =
+                            universe.0.iter().find(|player| player.total_score >= 21)
+                        {
+                            UniverseSimulationOutput::Winner(winning_player.id)
+                        } else {
+                            UniverseSimulationOutput::Universe(universe)
+                        }
+                    })
+                    .map(|universe_simulation_output| (universe_simulation_output, universe_count))
+                    .collect::<Vec<(UniverseSimulationOutput, u128)>>()
+            })
+            .flatten()
+            .collect::<Vec<(UniverseSimulationOutput, u128)>>()
+            .into_iter()
+            .filter_map(|(universe_simulation_output, universe_count)| {
+                match universe_simulation_output {
+                    UniverseSimulationOutput::Universe(universe) => {
+                        Some((universe, universe_count))
+                    }
+                    UniverseSimulationOutput::Winner(winner_id) => {
+                        winning_counters
+                            .entry(winner_id)
+                            .and_modify(|v| *v += universe_count)
+                            .or_insert(universe_count);
+                        None
+                    }
+                }
+            })
+            .fold(HashMap::new(), |mut map, next| {
+                map.entry(next.0)
+                    .and_modify(|v| *v += next.1)
+                    .or_insert(next.1);
+                map
+            });
+        current_player = (current_player + 1) % count_of_players;
+        println!(
+            "{} universes remain, {} different ones",
+            remaining_universes
+                .iter()
+                .map(|(_, count)| *count)
+                .sum::<u128>(),
+            remaining_universes.len()
+        );
+    }
+    winning_counters
+        .iter()
+        .map(|entry| *entry.1)
+        .max()
+        .ok_or(SimulateQuantumGameAndReturnWinningUniverseCountError::MissingPlayers)
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum SimulateQuantumGameAndReturnWinningUniverseCountError {
+    #[error("Could not parse players ({0})")]
+    ParsePlayers(#[from] ParsePlayersError),
+    #[error("Missing players")]
+    MissingPlayers,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct Universe(Vec<Player>);
 
 pub fn simulate_game_and_return_loosing_score_times_die_rolls(
     starting_positions: &str,
@@ -130,7 +237,7 @@ impl Die for DeterministicDie {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct Player {
     id: u8,
     position: u8,
@@ -227,5 +334,17 @@ mod tests {
 
         // then
         assert_eq!(losing_score_times_dice_rolls, Ok(739785));
+    }
+
+    #[test]
+    fn test_simulate_quantum_game_and_return_winning_universe_count() {
+        // given
+        let input = "Player 1 starting position: 4\r\nPlayer 2 starting position: 8\r\n";
+
+        // when
+        let winning_universe_count = simulate_quantum_game_and_return_winning_universe_count(input);
+
+        // then
+        assert_eq!(winning_universe_count, Ok(444356092776315));
     }
 }
