@@ -5,7 +5,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use thiserror::Error;
 
-use super::{read_file_contents, ReadFileContentsError};
+use super::{clap_arg_puzzle_part_time_two, read_file_contents, ReadFileContentsError};
 
 pub const SUBCOMMAND_NAME: &str = "day20";
 
@@ -20,14 +20,23 @@ pub fn subcommand() -> App<'static, 'static> {
                 .help("sets the input file")
                 .default_value("puzzle-inputs/day20-input"),
         )
+        .arg(clap_arg_puzzle_part_time_two())
 }
 
 pub fn handle(matches: &ArgMatches) -> Result<(), Day20Error> {
     let input_file = matches.value_of("input_file");
     let file_contents = read_file_contents(input_file)
         .map_err(|error| Day20Error::ReadFileContents(input_file.map(str::to_string), error))?;
-    let count_of_lit_pixels = count_lit_pixels_after_enhancement(&file_contents, 2)?;
-    println!("The count of lit pixels is {}.", count_of_lit_pixels);
+    let count_of_enhancements = match matches.value_of("puzzle_part").unwrap_or("two") {
+        "two" | "2" => 50,
+        _ => 2,
+    };
+    let count_of_lit_pixels =
+        count_lit_pixels_after_enhancement(&file_contents, count_of_enhancements)?;
+    println!(
+        "The count of lit pixels after {} enhancements is {}.",
+        count_of_enhancements, count_of_lit_pixels
+    );
     Ok(())
 }
 
@@ -303,7 +312,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_count_lit_pixels_after_enhancement() {
+    fn test_count_lit_pixels_after_enhancement_two_times() {
         // given
         let input = "..#.#..#####.#.#.#.###.##.....###.##.#..###.####..#####..#....#..#..##.\
                             .###..######.###...####..#..#####..##..#.#####...##.#.#..#.##..#.#...\
@@ -320,5 +329,25 @@ mod tests {
 
         // then
         assert_eq!(count_of_lit_pixels, Ok(35));
+    }
+
+    #[test]
+    fn test_count_lit_pixels_after_enhancement_fifty_times() {
+        // given
+        let input = "..#.#..#####.#.#.#.###.##.....###.##.#..###.####..#####..#....#..#..##.\
+                            .###..######.###...####..#..#####..##..#.#####...##.#.#..#.##..#.#...\
+                            ...#.###.######.###.####...#.##.##..#..#..#####.....#.#....###..#.##.\
+                            .....#.....#..#..#..##..#...##.######.####.####.#.#...#.......#..#.#.\
+                            #...####.##.#......#..#...##.#.##..#...##.#.##..###.#......#.#.......\
+                            #.#.#.####.###.##...#.....####.#..#..#.##.#....##..#.####....##...##.\
+                            .#...#......#.#.......#.......##..####..#...#.#.#...##..#.#..###..###\
+                            ##........#..####......#..#\r\n\r\n#..#.\r\n#....\r\n##..#\r\n..#..\r\n\
+                            ..###";
+
+        // when
+        let count_of_lit_pixels = count_lit_pixels_after_enhancement(input, 50);
+
+        // then
+        assert_eq!(count_of_lit_pixels, Ok(3351));
     }
 }
