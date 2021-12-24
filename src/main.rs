@@ -6,7 +6,7 @@ mod lib;
 
 use crate::lib::{
     day01, day02, day03, day04, day05, day06, day07, day08, day09, day10, day11, day12, day13,
-    day14, day15, day16, day17, day18, day19, day20,
+    day14, day15, day16, day17, day18, day19, day20, day21,
 };
 
 fn main() {
@@ -34,6 +34,7 @@ fn main() {
         .subcommand(day18::subcommand())
         .subcommand(day19::subcommand())
         .subcommand(day20::subcommand())
+        .subcommand(day21::subcommand())
         .get_matches();
     if let Err(error) = handle_matches(matches) {
         eprintln!("Error: {}", error);
@@ -64,6 +65,7 @@ fn handle_matches(matches: ArgMatches) -> Result<(), HandleMatchesError> {
             day18::SUBCOMMAND_NAME => day18::handle(subcommand_matches).map_err(Into::into),
             day19::SUBCOMMAND_NAME => day19::handle(subcommand_matches).map_err(Into::into),
             day20::SUBCOMMAND_NAME => day20::handle(subcommand_matches).map_err(Into::into),
+            day21::SUBCOMMAND_NAME => day21::handle(subcommand_matches).map_err(Into::into),
             subcommand_name => Err(HandleMatchesError::SubCommandDoesNotExist(
                 subcommand_name.to_string(),
             )),
@@ -118,4 +120,6 @@ enum HandleMatchesError {
     Day19Error(#[from] day19::Day19Error),
     #[error(transparent)]
     Day20Error(#[from] day20::Day20Error),
+    #[error(transparent)]
+    Day21Error(#[from] day21::Day21Error),
 }
